@@ -1,0 +1,17 @@
+FROM apache/airflow:2.8.0-python3.10
+
+# Switch to root to install system packages if needed
+USER root
+
+# Create necessary directories
+RUN mkdir -p /opt/airflow/config /opt/airflow/data /opt/airflow/logs
+
+# Switch back to airflow user
+USER airflow
+
+# Copy and install Python requirements
+COPY requirements-airflow.txt /requirements-airflow.txt
+RUN pip install --no-cache-dir -r /requirements-airflow.txt
+
+# Set environment variables
+ENV PYTHONPATH="${PYTHONPATH}:/opt/airflow"
