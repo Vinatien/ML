@@ -4,8 +4,13 @@ Airflow DAG: PostgreSQL → Transform → ClickHouse ETL Pipeline
 This DAG extracts transaction data from PostgreSQL, transforms it with feature engineering,
 and loads it into ClickHouse analytics database.
 
-Schedule: Daily at 1 AM
+Schedule: Manual trigger with configurable date range
 Author: VinaTien ML Team
+
+Usage:
+  Set the date range parameters in Airflow UI when triggering:
+  - start_date: Beginning of date range (format: YYYY-MM-DD)
+  - end_date: End of date range (format: YYYY-MM-DD)
 """
 
 from datetime import datetime, timedelta
@@ -13,6 +18,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 from airflow.utils.dates import days_ago
+from airflow.models import Variable
 import sys
 from pathlib import Path
 import os
@@ -39,11 +45,16 @@ default_args = {
 dag = DAG(
     'postgresql_to_clickhouse_etl',
     default_args=default_args,
-    description='Extract data from PostgreSQL, transform, and load to ClickHouse',
-    schedule_interval='0 1 * * *',  # Daily at 1 AM
+    description='Extract data from PostgreSQL, transform, and load to ClickHouse (Manual trigger with date range)',
+    schedule_interval=None,  # Manual trigger only
     start_date=days_ago(1),
     catchup=False,
-    tags=['etl', 'postgresql', 'clickhouse', 'analytics'],
+    tags=['etl', 'postgresql', 'clickhouse', 'analytics', 'batch'],
+    # DAG-level parameters that can be set when triggering
+    params={
+        'start_date': '2024-01-01',  # Default start date (YYYY-MM-DD)
+        'end_date': '2024-12-31',    # Default end date (YYYY-MM-DD)
+    },
 )
 
 
@@ -68,13 +79,19 @@ def check_clickhouse_connection():
 
 
 def extract_from_postgresql(**context):
-    """Extract transaction data from PostgreSQL."""
+    """Extract transaction data from PostgreSQL based on date range."""
     import pandas as pd
     from config.database import execute_query
     
-    print("📥 Extracting data from PostgreSQL...")
+    # Get date range parameters from DAG config
+    params = context['params']
+    start_date = params.get('start_date', '2024-01-01')
+    end_date = params.get('end_date', '2024-12-31')
     
-    query = """
+    print(f"📥 Extracting data from PostgreSQL...")
+    print(f"   Date Range: {start_date} to {end_date}")
+    
+    query = f"""
     SELECT 
         t.id,
         t.bank_account_id,
@@ -94,16 +111,19 @@ def extract_from_postgresql(**context):
     FROM transactions t
     LEFT JOIN bank_accounts ba ON t.bank_account_id = ba.id
     WHERE t.booking_status = 'booked'
+      AND t.booking_date >= '{start_date}'
+      AND t.booking_date <= '{end_date}'
     ORDER BY t.booking_date DESC
     """
     
     df = execute_query(query)
     
     if len(df) == 0:
-        print("⚠️  No data found in PostgreSQL")
+        print(f"⚠️  No data found in PostgreSQL for date range {start_date} to {end_date}")
         return {"row_count": 0, "status": "no_data"}
     
     print(f"✅ Extracted {len(df)} transactions")
+    print(f"   Actual Date Range: {df['booking_date'].min()} to {df['booking_date'].max()}")
     
     # Save to temporary location for next task
     temp_path = Path("/tmp/airflow_etl_data.parquet")
@@ -114,6 +134,10 @@ def extract_from_postgresql(**context):
     context['ti'].xcom_push(key='date_range', value={
         'min': str(df['booking_date'].min()),
         'max': str(df['booking_date'].max())
+    })
+    context['ti'].xcom_push(key='requested_date_range', value={
+        'start_date': start_date,
+        'end_date': end_date
     })
     
     return {"row_count": len(df), "status": "success"}
@@ -277,28 +301,35 @@ def validate_and_report(**context):
     
     # Get metrics from previous tasks
     ti = context['ti']
+    params = context['params']
     
     extract_count = ti.xcom_pull(task_ids='extract_from_postgresql', key='extract_count') or 0
     date_range = ti.xcom_pull(task_ids='extract_from_postgresql', key='date_range') or {'min': 'N/A', 'max': 'N/A'}
+    requested_range = ti.xcom_pull(task_ids='extract_from_postgresql', key='requested_date_range') or {}
     transform_count = ti.xcom_pull(task_ids='transform_data', key='transform_count') or 0
     feature_count = ti.xcom_pull(task_ids='transform_data', key='feature_count') or 0
     batch_id = ti.xcom_pull(task_ids='transform_data', key='batch_id') or 'N/A'
     clickhouse_inserted = ti.xcom_pull(task_ids='load_to_clickhouse', key='clickhouse_inserted') or 0
     clickhouse_total = ti.xcom_pull(task_ids='load_to_clickhouse', key='clickhouse_total') or 0
     
-    # Format date range safely
+    # Format date ranges safely
     date_range_str = f"{date_range.get('min', 'N/A')} to {date_range.get('max', 'N/A')}" if isinstance(date_range, dict) else 'N/A'
+    requested_range_str = f"{requested_range.get('start_date', params.get('start_date', 'N/A'))} to {requested_range.get('end_date', params.get('end_date', 'N/A'))}"
     
     report = f"""
-📊 ETL Pipeline Execution Report
+📊 ETL Pipeline Execution Report (Batch Job)
 {'=' * 70}
 
 Execution Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Batch ID: {batch_id}
 
+Date Range Configuration:
+├─ Requested Range: {requested_range_str}
+└─ Actual Data Range: {date_range_str}
+
 Source (PostgreSQL):
 ├─ Records Extracted: {extract_count:,}
-└─ Date Range: {date_range_str}
+└─ Booking Status: booked
 
 Transformation:
 ├─ Records Processed: {transform_count:,}
