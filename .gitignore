@@ -1,0 +1,276 @@
+# ====================================================================
+# Environment Variables & Secrets
+# ====================================================================
+.env
+*.env
+!.env.example
+
+# ====================================================================
+# Python
+# ====================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+pipenv/
+poetry.lock
+
+# ====================================================================
+# Airflow
+# ====================================================================
+# Airflow database (SQLite)
+airflow/airflow.db
+airflow/unittests.db
+airflow/*.db
+
+# Airflow logs
+airflow/logs/*
+!airflow/logs/.gitkeep
+
+# Airflow plugins cache
+airflow/plugins/__pycache__/
+
+# Airflow config (may contain sensitive info)
+airflow/airflow.cfg
+airflow/webserver_config.py
+
+# Airflow scheduler PID files
+airflow/*.pid
+airflow/*.err
+airflow/*.out
+airflow/airflow_pids.txt
+
+# Airflow standalone files
+airflow/standalone_admin_password.txt
+
+# ====================================================================
+# ClickHouse
+# ====================================================================
+# ClickHouse data directory (from Docker volumes)
+clickhouse/data/
+clickhouse/logs/
+
+# ClickHouse config backups
+clickhouse/*.backup
+
+# ====================================================================
+# Data Files
+# ====================================================================
+# Feature store (Parquet files can be large)
+data/feature_store/*.parquet
+!data/feature_store/.gitkeep
+
+# Raw data
+data
+data/raw/*
+!data/raw/.gitkeep
+
+# Processed data
+data/processed/*
+!data/processed/.gitkeep
+
+# Temporary data
+data/temp/*
+data/tmp/*
+
+# CSV exports
+*.csv
+data/**/*.csv
+
+# Parquet files (except examples)
+*.parquet
+!*example*.parquet
+
+# Pickle files
+*.pkl
+*.pickle
+
+# ====================================================================
+# Machine Learning Models
+# ====================================================================
+models/*.h5
+models/*.pkl
+models/*.joblib
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.pb
+!models/.gitkeep
+!models/README.md
+
+# Model checkpoints
+checkpoints/
+*.ckpt
+
+# ====================================================================
+# Logs & Monitoring
+# ====================================================================
+*.log
+logs/*
+!logs/.gitkeep
+
+# ETL reports
+logs/airflow_etl_report_*.txt
+
+# Debug logs
+debug.log
+error.log
+
+# ====================================================================
+# Jupyter Notebook
+# ====================================================================
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# Jupyter Notebook outputs
+notebooks/**/output/
+
+# ====================================================================
+# IDE & Editors
+# ====================================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+\#*\#
+.\#*
+
+# ====================================================================
+# Docker
+# ====================================================================
+# Docker volumes
+docker-compose.override.yml
+
+# Docker build cache
+.dockerignore
+
+# ====================================================================
+# Testing
+# ====================================================================
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+
+# ====================================================================
+# OS
+# ====================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ====================================================================
+# Temporary Files
+# ====================================================================
+*.tmp
+*.temp
+*.bak
+*.swp
+*~.nib
+local_settings.py
+
+# Temporary directories
+tmp/
+temp/
+cache/
+
+# ====================================================================
+# Package Manager
+# ====================================================================
+# UV lock file (if you want to regenerate it)
+# uv.lock
+
+# Conda
+.conda/
+*.conda
+
+# ====================================================================
+# Secrets & Credentials (Extra Safety)
+# ====================================================================
+**/secrets/
+**/credentials/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*_key
+*_secret
+*credentials*.json
+*service-account*.json
+
+# ====================================================================
+# Large Files & Archives
+# ====================================================================
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# ====================================================================
+# Documentation & README Files
+# ====================================================================
+# Ignore all markdown documentation files
+*.md
+!README.md  # Keep main README (optional - remove this line to ignore all .md)
+
+# ====================================================================
+# Custom Project Specific
+# ====================================================================
+# Keep documentation but ignore large generated docs
+docs/_build/
+
+# Ignore experimental notebooks
+notebooks/experiments/
+notebooks/scratch/
+
+# Ignore local config overrides
+config/local.py
+config.local.yml

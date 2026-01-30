@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  ml-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: vinatien-ml-api:latest
+    container_name: vinatien-ml-api
+    ports:
+      - "8001:8001"
+    environment:
+      # Database connections (connect to existing backend PostgreSQL)
+      - DB_HOST=vinatien-postgres
+      - DB_PORT=5432
+      - DB_NAME=vinatien_db
+      - DB_USER=postgres
+      - DB_PASSWORD=root
+      
+      # ClickHouse connections (to be started separately or use external)
+      - CLICKHOUSE_HOST=vinatien-clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_HTTP_PORT=8123
+      - CLICKHOUSE_DATABASE=vinatien_analytics
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=clickhouse123
+      
+      # API configuration
+      - API_PORT=8001
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=development
+    
+    volumes:
+      - ./api:/app/api  # Hot reload during development
+      - ./config:/app/config
+      - ./logs:/app/logs
+    
+    networks:
+      - vinatien-network
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    
+    # ML API will use external PostgreSQL and ClickHouse
+    # Make sure backend services are running first!
+    # docker compose up -d (from backend folder)
+
+networks:
+  # Connect to the existing backend network
+  vinatien-network:
+    external: true
+    name: backend_vinatien-network
+
+# Note: PostgreSQL and ClickHouse volumes are managed by backend service

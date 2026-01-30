@@ -1,0 +1,39 @@
+{
+  "user_id": 123,
+  "account_id": 456,
+  "user_age": 28,
+  "account_age_months": 6,
+  "has_direct_deposit": true,
+  "employment_months": 8,
+  "inflow_transactions": [
+    {
+      "amount": 1500.0,
+      "date": "2026-01-10T00:00:00Z",
+      "sender_name": "ABC Company Ltd",
+      "description": "Salary Payment"
+    },
+    {
+      "amount": 1500.0,
+      "date": "2025-12-27T00:00:00Z",
+      "sender_name": "ABC Company Ltd",
+      "description": "Salary Payment"
+    },
+    {
+      "amount": 1500.0,
+      "date": "2025-12-13T00:00:00Z",
+      "sender_name": "ABC Company Ltd",
+      "description": "Salary Payment"
+    }
+  ],
+  "nsf_count_90d": 0,
+  "income_volatility": 0.05,
+  "prior_ewa_failed": false,
+  "rapid_redraw": false,
+  "accrued_wage": 750.0,
+  "hourly_wage": 25.0,
+  "hours_worked": 60.0,
+  "last_advance_date": null,
+  "last_repayment_date": null,
+  "recent_advance_count_7d": 0,
+  "requested_amount": 200.0
+}

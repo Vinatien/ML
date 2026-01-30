@@ -52,8 +52,8 @@ dag = DAG(
     tags=['etl', 'postgresql', 'clickhouse', 'analytics', 'batch'],
     # DAG-level parameters that can be set when triggering
     params={
-        'start_date': '2024-01-01',  # Default start date (YYYY-MM-DD)
-        'end_date': '2024-12-31',    # Default end date (YYYY-MM-DD)
+        'start_date': '2019-01-01',  # Default start date (YYYY-MM-DD)
+        'end_date': '2025-12-31',    # Default end date (YYYY-MM-DD)
     },
 )
 
