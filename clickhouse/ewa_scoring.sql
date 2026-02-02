@@ -1,0 +1,1 @@
+SELECT * FROM ewa_eligibility_scores;

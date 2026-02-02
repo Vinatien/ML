@@ -369,11 +369,17 @@ def run_batch_heuristics(**context):
 def save_to_clickhouse(**context):
     """
     Load batch scoring results to ClickHouse analytics database.
+    
+    Deduplication Strategy:
+    - Delete existing records for today's scoring_date before inserting new ones
+    - This ensures each (scoring_date, user_id, account_id) combination is unique
+    - Allows re-running the DAG for the same date without creating duplicates
     """
     import pandas as pd
-    from config.clickhouse import insert_dataframe, get_table_count
+    from config.clickhouse import insert_dataframe, get_table_count, execute_clickhouse_query
+    from datetime import datetime
     
-    print("🗄️  Loading batch scores to ClickHouse...")
+    print("🗄️  Loading batch scores to ClickHouse with deduplication...")
     
     # Read results
     temp_results_path = Path("/tmp/ewa_batch_scores.parquet")
@@ -387,6 +393,58 @@ def save_to_clickhouse(**context):
     results_df['scoring_date'] = pd.to_datetime(results_df['scoring_date'])
     results_df['scoring_timestamp'] = pd.to_datetime(results_df['scoring_timestamp'])
     
+    # Get today's scoring date
+    scoring_date = results_df['scoring_date'].iloc[0].strftime('%Y-%m-%d')
+    
+    # DEDUPLICATION STEP 1: Check if data exists for this scoring_date
+    check_query = f"""
+    SELECT COUNT(*) as count
+    FROM vinatien_analytics.ewa_eligibility_scores
+    WHERE scoring_date = '{scoring_date}'
+    """
+    
+    try:
+        existing_count_result = execute_clickhouse_query(check_query)
+        existing_count = existing_count_result[0]['count'] if existing_count_result else 0
+        
+        if existing_count > 0:
+            print(f"⚠️  Found {existing_count} existing records for {scoring_date}")
+            print(f"   Deleting old records to prevent duplicates...")
+            
+            # DEDUPLICATION STEP 2: Delete existing records for this date
+            delete_query = f"""
+            ALTER TABLE vinatien_analytics.ewa_eligibility_scores
+            DELETE WHERE scoring_date = '{scoring_date}'
+            """
+            
+            execute_clickhouse_query(delete_query)
+            print(f"✅ Deleted {existing_count} old records for {scoring_date}")
+        else:
+            print(f"✓ No existing records found for {scoring_date}, proceeding with insert")
+    
+    except Exception as e:
+        print(f"⚠️  Could not check for existing records: {e}")
+        print(f"   Proceeding with insert (may create duplicates if data exists)")
+    
+    # DEDUPLICATION STEP 3: Deduplicate within current batch
+    # In case the same user_id+account_id appears multiple times in this run
+    print(f"\n🔍 Checking for duplicates within current batch...")
+    original_count = len(results_df)
+    
+    # Keep only the latest record for each (scoring_date, user_id, account_id) combination
+    results_df = results_df.sort_values('scoring_timestamp', ascending=False)
+    results_df = results_df.drop_duplicates(
+        subset=['scoring_date', 'user_id', 'account_id'],
+        keep='first'
+    )
+    
+    deduped_count = len(results_df)
+    if original_count > deduped_count:
+        print(f"   ⚠️  Removed {original_count - deduped_count} duplicate entries within batch")
+        print(f"   ✓ Unique records: {deduped_count}")
+    else:
+        print(f"   ✓ No duplicates found in current batch")
+    
     # Insert to ClickHouse
     rows_inserted = insert_dataframe(
         results_df,
@@ -394,14 +452,41 @@ def save_to_clickhouse(**context):
         database='vinatien_analytics'
     )
     
-    print(f"✅ Loaded {rows_inserted} rows to ClickHouse")
+    print(f"\n✅ Successfully loaded {rows_inserted} unique rows to ClickHouse")
     
     # Get total count
     total_count = get_table_count('vinatien_analytics.ewa_eligibility_scores')
     print(f"   Total rows in table: {total_count:,}")
     
+    # Verify no duplicates for today
+    verify_query = f"""
+    SELECT 
+        scoring_date,
+        user_id,
+        account_id,
+        COUNT(*) as duplicate_count
+    FROM vinatien_analytics.ewa_eligibility_scores
+    WHERE scoring_date = '{scoring_date}'
+    GROUP BY scoring_date, user_id, account_id
+    HAVING duplicate_count > 1
+    """
+    
+    try:
+        duplicates = execute_clickhouse_query(verify_query)
+        if duplicates:
+            print(f"\n⚠️  WARNING: Found {len(duplicates)} duplicate entries after insertion!")
+            print(f"   First 5 duplicates:")
+            for dup in duplicates[:5]:
+                print(f"      user_id={dup['user_id']}, account_id={dup['account_id']}, count={dup['duplicate_count']}")
+        else:
+            print(f"\n✓ Verification passed: No duplicates found for {scoring_date}")
+    except Exception as e:
+        print(f"\n⚠️  Could not verify duplicates: {e}")
+    
     # Summary stats
     print("\n📊 Batch Scoring Summary:")
+    print(f"   Date: {scoring_date}")
+    print(f"   Users Scored: {deduped_count:,}")
     print(f"   Approval Rate: {results_df['approved'].mean()*100:.1f}%")
     print(f"   Avg Max Advance: ${results_df['max_advance_amount'].mean():.2f}")
     print("\n   Risk Tier Distribution:")
@@ -410,8 +495,13 @@ def save_to_clickhouse(**context):
         print(f"      Tier {tier}: {count} ({count/len(results_df)*100:.1f}%)")
     
     context['ti'].xcom_push(key='clickhouse_inserted', value=rows_inserted)
+    context['ti'].xcom_push(key='duplicates_removed', value=original_count - deduped_count)
     
-    return {"rows_inserted": rows_inserted, "total_count": total_count}
+    return {
+        "rows_inserted": rows_inserted, 
+        "total_count": total_count,
+        "duplicates_removed": original_count - deduped_count
+    }
 
 
 def generate_report(**context):
@@ -431,6 +521,7 @@ def generate_report(**context):
     scored_count = ti.xcom_pull(task_ids='run_batch_heuristics', key='scored_count') or 0
     error_count = ti.xcom_pull(task_ids='run_batch_heuristics', key='error_count') or 0
     clickhouse_inserted = ti.xcom_pull(task_ids='save_to_clickhouse', key='clickhouse_inserted') or 0
+    duplicates_removed = ti.xcom_pull(task_ids='save_to_clickhouse', key='duplicates_removed') or 0
     
     report = f"""
 📊 EWA Batch Heuristic Scoring Report
@@ -444,14 +535,26 @@ Pipeline Metrics:
 ├─ User Data Prepared: {prepared_count:,}
 ├─ Successfully Scored: {scored_count:,}
 ├─ Errors: {error_count:,}
+├─ Duplicates Removed: {duplicates_removed:,}
 └─ Loaded to ClickHouse: {clickhouse_inserted:,}
 
 Success Rate: {(scored_count/user_count*100) if user_count > 0 else 0:.1f}%
+Data Quality: {((clickhouse_inserted/(clickhouse_inserted+duplicates_removed))*100) if (clickhouse_inserted+duplicates_removed) > 0 else 100:.1f}% unique records
+
+Deduplication Summary:
+├─ Original Records: {clickhouse_inserted + duplicates_removed:,}
+├─ Duplicates Removed: {duplicates_removed:,}
+└─ Unique Records Inserted: {clickhouse_inserted:,}
 
 Next Steps:
 1. Query results: SELECT * FROM vinatien_analytics.ewa_eligibility_scores WHERE scoring_date = today()
 2. View dashboards: Metabase/Grafana for approval rate trends
 3. Export pre-qualified users for marketing campaigns
+4. Verify uniqueness: SELECT scoring_date, user_id, account_id, COUNT(*) as cnt 
+                       FROM vinatien_analytics.ewa_eligibility_scores 
+                       WHERE scoring_date = today() 
+                       GROUP BY scoring_date, user_id, account_id 
+                       HAVING cnt > 1
 
 Status: ✅ SUCCESS
 {'=' * 70}
@@ -472,7 +575,8 @@ Status: ✅ SUCCESS
     return {
         "status": "success",
         "scored_count": scored_count,
-        "error_count": error_count
+        "error_count": error_count,
+        "duplicates_removed": duplicates_removed
     }
 
 
